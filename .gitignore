@@ -1,0 +1,11 @@
+/build/
+/payload/Focusing.exe
+*.ini
+Data/
+portable.flag
+*.generated.ahk
+*.stdout.txt
+*.stderr.txt
+.env*
+.DS_Store
+Thumbs.db

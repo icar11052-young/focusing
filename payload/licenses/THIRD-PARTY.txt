@@ -1,0 +1,14 @@
+Focusing 0.1.0-beta.1 includes the unmodified AutoHotkey 2.0.26 runtime.
+AutoHotkey project: https://www.autohotkey.com/
+Runtime source: https://github.com/AutoHotkey/AutoHotkey/tree/v2.0.26
+Corresponding source archive: AutoHotkey-2.0.26-source.zip
+License and third-party notices: AutoHotkey-license.txt
+
+Installer built with Inno Setup 7.1.0.
+Copyright (C) 1997-2026 Jordan Russell.
+Portions Copyright (C) 2000-2026 Martijn Laan.
+https://www.innosetup.com/
+
+Focusing source: https://github.com/icar11052-young/focusing/tree/v0.1.0-beta.1
+Focusing license: GPL-2.0-only; see Focusing-license.txt.
+Copyright (c) 2026 icar11052-young.
