@@ -136,4 +136,3 @@ $testProcess = Start-Process -FilePath $Runtime -ArgumentList ('/ErrorStdOut "' 
 Get-Content -LiteralPath $stdoutPath
 Get-Content -LiteralPath $stderrPath
 if ($testProcess.ExitCode -ne 0) { throw "Regression failed with exit $($testProcess.ExitCode)" }
-

@@ -189,7 +189,3 @@ $proc=Start-Process -FilePath $Runtime -ArgumentList ('/ErrorStdOut "'+$testPath
 Get-Content -LiteralPath $out
 Get-Content -LiteralPath $err
 if($proc.ExitCode -ne 0){throw 'Drag regression failed.'}
-
-
-
-

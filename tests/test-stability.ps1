@@ -158,7 +158,3 @@ $firstExit = $lastTestExit
 Run-Test 'reload'
 if (!$scopeOk -or $firstExit -ne 0 -or $lastTestExit -ne 0) { throw 'Stability regression failed.' }
 Write-Output 'PASS hotkey scope and fresh-process persistence'
-
-
-
-
