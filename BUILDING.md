@@ -55,3 +55,6 @@ macOS14 이상과 Xcode Command Line Tools에서 ./macos/build.sh를 실행합�
 ## 자동 빌드
 
 .github/workflows/build.yml은 Windows runner에서 ci-windows.ps1로 공식 도구 해시·회귀검사·실행진단·설치·제거를 검사합니다. Mac runner는 universal 앱·DMG·ZIP을 생성합니다. Windows 소스 실행에는 src/PairShortcuts.ahk와 src/PairTools.ps1이 필요합니다. build.ps1은 PairTools.ps1을 payload에 복사합니다. 실제 INI·Data·Pairs·로그·서명 인증서는 배포하지 않습니다.
+
+
+Mac 실제 창 통합 검사에는 macos/tests/Fixture.swift를 실행 파일로 빌드한 별도 시험 앱이 필요합니다. 앱의 CFBundleIdentifier를 com.young.focusing.fixture, 실행 파일명을 Fixture로 설정하고 실행하면 개인 문서 없는 두 창이 열립니다. 손쉬운 사용 권한이 있는 개발 환경에서 Focusing --integration-test를 실행하면 이 식별자의 시험 창만 대상으로 제목줄·탭 제외, 좌우 배치·교환·복원과12회550ms 유지 검사를 수행합니다. CI에서는 권한이 필요한 실제 창 통합 검사를 실행하지 않습니다.
