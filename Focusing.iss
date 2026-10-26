@@ -1,9 +1,9 @@
-#define AppVersion "0.1.0-beta.1"
+﻿#define AppVersion "0.2.0-beta.1"
 [Setup]
 AppId=Focusing.Desktop
 AppName=Focusing
 AppVersion={#AppVersion}
-VersionInfoVersion=0.1.0.0
+VersionInfoVersion=0.2.0.0
 AppPublisher=Focusing
 DefaultDirName={localappdata}\Programs\Focusing
 DefaultGroupName=Focusing
@@ -35,6 +35,7 @@ Name: "desktopicon"; Description: "바탕 화면 바로가기 만들기"; Flags:
 
 [Files]
 Source: "payload\Focusing.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "payload\PairTools.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
 

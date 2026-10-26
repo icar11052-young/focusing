@@ -9,3 +9,5 @@ portable.flag
 .env*
 .DS_Store
 Thumbs.db
+
+/payload/PairTools.ps1

@@ -1,3 +1,4 @@
+# Windows 실행 파일과 설치 프로그램을 빌드한다.
 param(
     [string]$Ahk2Exe = (Join-Path $PSScriptRoot '..\release-tools\Ahk2Exe\Ahk2Exe.exe'),
     [string]$Runtime = 'C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe',
@@ -6,6 +7,7 @@ param(
 $ErrorActionPreference='Stop'
 New-Item -ItemType Directory -Path (Join-Path $PSScriptRoot 'build'),(Join-Path $PSScriptRoot 'payload') -Force | Out-Null
 foreach($file in @($Ahk2Exe,$Runtime,$Iscc)){if(!(Test-Path -LiteralPath $file)){throw "Missing build tool: $file"}}
+Copy-Item (Join-Path $PSScriptRoot 'src\PairTools.ps1') (Join-Path $PSScriptRoot 'payload\PairTools.ps1') -Force
 $source=Join-Path $PSScriptRoot 'src\Focusing.ahk'
 $exe=Join-Path $PSScriptRoot 'payload\Focusing.exe'
 $icon=Join-Path $PSScriptRoot 'src\focusing.ico'

@@ -1,6 +1,6 @@
-﻿# Focusing 시험 배포본 빌드
+# Focusing 시험 배포본 빌드
 
-버전은 0.1.0-beta.1이다. Windows x64용 공개 소스이며, 일반 사용자는 Releases에서 설치 프로그램 또는 무설치 ZIP을 받으면 된다.
+버전은 0.2.0-beta.1이다. Windows x64용 공개 소스이며, 일반 사용자는 Releases에서 설치 프로그램 또는 무설치 ZIP을 받으면 된다.
 
 ## 도구
 
@@ -25,7 +25,7 @@ PowerShell에서 도구의 실제 경로를 전달한다.
 ./build.ps1 -Ahk2Exe 'C:\Tools\Ahk2Exe.exe' -Runtime 'C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe' -Iscc 'C:\Tools\Inno Setup\ISCC.exe'
 ```
 
-출력은 `payload/Focusing.exe`와 `build/Focusing-0.1.0-beta.1-windows-x64-setup.exe`이다. 서명되지 않은 빌드다. 다른 시각에 빌드하면 실행 파일의 해시가 달라질 수 있다.
+출력은 `payload/Focusing.exe`와 `build/Focusing-0.2.0-beta.1-windows-x64-setup.exe`이다. 서명되지 않은 빌드다. 다른 시각에 빌드하면 실행 파일의 해시가 달라질 수 있다.
 
 무설치 묶음은 payload의 전체 파일과 빈 `portable.flag`를 ZIP으로 압축한다. 사용자 INI, Data 폴더, 개발 로그를 넣지 않는다. 설치형에는 portable.flag를 넣지 않는다.
 
@@ -46,3 +46,12 @@ AutoHotkey가 설치된 개발 PC에서 실행한다. 테스트는 실제 소스
 개인판의 펫 제외, 창 겹침 복구, 토글, 비율 저장, 더블클릭, 드래그 수정이 포함된다. 배포판은 실행기 내장, 아이콘 내장, 사용자별/무설치 설정 경로, 버전·도움말, 중복 실행 방지, 컴파일된 실행 파일의 관리자 재시작을 추가한다. 설치 시 자동 실행은 선택 사항이다.
 
 AutoHotkey의 라이선스와 대응 소스는 payload/licenses에 포함된다. Focusing 자체 소스는 GPL-2.0-only로 공개하며, 배포본은 이 GitHub 저장소의 Releases에서 제공한다.
+
+
+## Mac
+
+macOS14 이상과 Xcode Command Line Tools에서 ./macos/build.sh를 실행합니다. arm64·x86_64를 함께 빌드하고 ad-hoc 서명합니다. Apple 공증은 수행하지 않습니다. build/macos/Focusing.app/Contents/MacOS/Focusing --self-test로 배치 계산 검사를 실행합니다.
+
+## 자동 빌드
+
+.github/workflows/build.yml은 Windows runner에서 ci-windows.ps1로 공식 도구 해시·회귀검사·실행진단·설치·제거를 검사합니다. Mac runner는 universal 앱·DMG·ZIP을 생성합니다. Windows 소스 실행에는 src/PairShortcuts.ahk와 src/PairTools.ps1이 필요합니다. build.ps1은 PairTools.ps1을 payload에 복사합니다. 실제 INI·Data·Pairs·로그·서명 인증서는 배포하지 않습니다.

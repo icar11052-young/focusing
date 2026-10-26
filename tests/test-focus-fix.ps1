@@ -14,6 +14,7 @@ $harness = @'
 #Requires AutoHotkey v2.0
 #SingleInstance Off
 #NoTrayIcon
+#Warn All, Off
 OnError((err, mode) => (FileAppend(err.Message "`n", "**"), ExitApp(1)))
 MIN_HEIGHT_RATIO := 0.45
 MAX_GAP := 48
@@ -23,6 +24,8 @@ lastSwapTick := 0
 SWAP_COOLDOWN := 0
 userLargeRatio := 0.6935
 handleDragging := false
+lastPairLeft := 1
+lastPairRight := 2
 mutations := 0
 failures := 0
 checks := 0
@@ -133,3 +136,4 @@ $testProcess = Start-Process -FilePath $Runtime -ArgumentList ('/ErrorStdOut "' 
 Get-Content -LiteralPath $stdoutPath
 Get-Content -LiteralPath $stderrPath
 if ($testProcess.ExitCode -ne 0) { throw "Regression failed with exit $($testProcess.ExitCode)" }
+

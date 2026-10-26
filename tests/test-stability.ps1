@@ -20,7 +20,8 @@ $harness = @'
 #Requires AutoHotkey v2.0
 #SingleInstance Off
 #NoTrayIcon
-OnError((err,mode) => (FileAppend(err.Message "`n","**"),ExitApp(1)))
+#Warn All, Off
+OnError((err,mode) => (FileAppend(err.Message " line=" err.Line " what=" err.What " extra=" err.Extra "`n","**"),ExitApp(1)))
 INI_PATH := A_ScriptDir "\stability-test-settings.ini"
 DEFAULT_LARGE_RATIO := 2/3
 MIN_LARGE_RATIO := 0.5
@@ -131,10 +132,15 @@ GetWorkAreaForWindow(hwnd) {
 GetRectOuter(hwnd) {
     return {w:800}
 }
+GetRect(hwnd) {
+    return {w:800}
+}
 MovePairFill(*) {
     global moveCount
     moveCount += 1
     return 800
+}
+PersistActivePair(*) {
 }
 '@
 $testPath = Join-Path $PSScriptRoot 'stability-test.generated.ahk'
@@ -152,3 +158,7 @@ $firstExit = $lastTestExit
 Run-Test 'reload'
 if (!$scopeOk -or $firstExit -ne 0 -or $lastTestExit -ne 0) { throw 'Stability regression failed.' }
 Write-Output 'PASS hotkey scope and fresh-process persistence'
+
+
+
+

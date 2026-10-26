@@ -1,7 +1,7 @@
 ﻿param([string]$SourcePath = (Join-Path $PSScriptRoot '..\src\Focusing.ahk'), [string]$Runtime = 'C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe')
 $ErrorActionPreference = 'Stop'
 $source = [IO.File]::ReadAllText($SourcePath).Replace("`r`n", "`n")
-$selected = foreach ($name in @('ReadDragPointer','HandleLButtonDown','WatchHandleArm','DoHandleDrag','MovePairFill','MoveHandleTo','ForceMove')) {
+$selected = foreach ($name in @('EnsurePhysicalCoordinates','IsTargetInWorkArea','ReadDragPointer','HandleLButtonDown','WatchHandleArm','DoHandleDrag','MovePairFill','MoveHandleTo','ForceMove','VisualTargetToOuter')) {
     $m = [regex]::Match($source, '(?ms)^' + $name + '\([^\n]*\) \{.*?^\}')
     if ($m.Success) { $m.Value }
 }
@@ -11,7 +11,8 @@ $harness = @'
 #Requires AutoHotkey v2.0
 #SingleInstance Off
 #NoTrayIcon
-OnError((err,mode) => (FileAppend(err.Message "`n","**"),ExitApp(1)))
+#Warn All, Off
+OnError((err,mode) => (FileAppend(err.Message " line=" err.Line " what=" err.What " extra=" err.Extra "`n","**"),ExitApp(1)))
 checks := 0
 failures := 0
 handleGuiHwnd := 99
@@ -136,6 +137,10 @@ GetRectOuter(hwnd) {
     global rects
     return rects[hwnd]
 }
+GetRect(hwnd) {
+    global rects
+    return rects[hwnd]
+}
 CanMovePair(*) {
     return true
 }
@@ -184,3 +189,7 @@ $proc=Start-Process -FilePath $Runtime -ArgumentList ('/ErrorStdOut "'+$testPath
 Get-Content -LiteralPath $out
 Get-Content -LiteralPath $err
 if($proc.ExitCode -ne 0){throw 'Drag regression failed.'}
+
+
+
+

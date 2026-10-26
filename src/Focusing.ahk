@@ -2,13 +2,43 @@
 ; Copyright (c) 2026 icar11052-young
 ;@Ahk2Exe-SetName Focusing
 ;@Ahk2Exe-SetDescription Focusing window focus utility
-;@Ahk2Exe-SetVersion 0.1.0.0
-;@Ahk2Exe-SetProductVersion 0.1.0-beta.1
+;@Ahk2Exe-SetVersion 0.2.0.0
+;@Ahk2Exe-SetProductVersion 0.2.0-beta.1
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
 ; 닫힌 창/일시 hwnd 에러는 조용히 무시 (에러 팝업 방지)
 OnError(SafeWindowError)
+EnsurePhysicalCoordinates()
+
+EnsurePhysicalCoordinates() {
+    ; DWM rectangles are physical pixels. Every entry from a timer/window
+    ; callback must use that same coordinate space, including GetWindowRect.
+    if !DllCall("User32\SetThreadDpiAwarenessContext", "Ptr", -4, "Ptr")
+        throw Error("Cannot enable per-monitor physical coordinates; layout cancelled")
+}
+
+IsTargetInWorkArea(hwnd, x, y, w, h) {
+    EnsurePhysicalCoordinates()
+    if !WinAlive(hwnd) || w <= 0 || h <= 0
+        return false
+    area := GetWorkAreaForWindow(hwnd)
+    return x >= area.x - 1 && y >= area.y - 1
+        && x + w <= area.r + 1 && y + h <= area.b + 1
+}
+
+WriteRuntimeState(*) {
+    global settingsDir, enabled
+    EnsurePhysicalCoordinates()
+    ctx := DllCall("User32\GetThreadDpiAwarenessContext", "Ptr")
+    awareness := DllCall("User32\GetAwarenessFromDpiAwarenessContext", "Ptr", ctx, "Int")
+    file := settingsDir "\runtime-status.ini"
+    IniWrite(DllCall("GetCurrentProcessId"), file, "runtime", "pid")
+    IniWrite(awareness, file, "runtime", "dpiAwareness")
+    IniWrite(enabled ? 1 : 0, file, "runtime", "enabled")
+    IniWrite(A_Now, file, "runtime", "updated")
+    IniWrite("2026-10-02-physical-dpi", file, "runtime", "revision")
+}
 
 SafeWindowError(e, *) {
     if InStr(e.Message, "Target window not found")
@@ -30,13 +60,14 @@ MAX_GAP := 48
 SWAP_COOLDOWN := 350
 HANDLE_W := 14
 HANDLE_REFRESH_MS := 250
-APP_VERSION := "0.1.0-beta.1"
+APP_VERSION := "0.2.0-beta.1"
 portableMode := A_IsCompiled && FileExist(A_ScriptDir "\portable.flag")
 settingsDir := A_IsCompiled ? (portableMode ? A_ScriptDir "\Data" : A_AppData "\Focusing") : A_ScriptDir
 DirCreate(settingsDir)
 INI_PATH := settingsDir "\focusing.ini"
 ICON_PATH := A_IsCompiled ? A_ScriptFullPath : A_ScriptDir "\focusing.ico"
 
+focusClick := 0
 enabled := true
 lastSwapTick := 0
 elevHintShown := false
@@ -114,6 +145,9 @@ Tray.Add("종료", (*) => ExitApp())
 InitHandleGui()
 SetTimer(RefreshHandle, HANDLE_REFRESH_MS)
 OnExit(CleanupHandle)
+InitPairShortcuts()
+WriteRuntimeState()
+SetTimer(WriteRuntimeState, 5000)
 
 ToggleEnabled(*) {
     global enabled
@@ -236,53 +270,79 @@ SetUserLargeRatio(r, persist := true) {
 }
 
 ; 클릭 후 포커스가 잡히면 실행 (마우스가 핵심)
-~*LButton Up:: {
-    ; WinGetPos uses screen coordinates; the default client coordinates exclude the title bar.
+; Decide on mouse-down, before tab close/selection can change the hit target.
+~*LButton:: CaptureFocusClick()
+~*LButton Up:: FinishFocusClick()
+
+CaptureFocusClick() {
+    EnsurePhysicalCoordinates()
+    global focusClick, enabled, handleDragging, handleDragArmed, handleGuiHwnd, handleIgnoreExpandUntil
+    focusClick := 0
+    if !enabled || handleDragging || handleDragArmed || A_TickCount < handleIgnoreExpandUntil
+        return
     CoordMode("Mouse", "Screen")
-    global enabled, handleDragging, handleDragArmed, handleGuiHwnd, handleIgnoreExpandUntil
-    if !enabled || handleDragging || handleDragArmed
-        return
-    if (A_TickCount < handleIgnoreExpandUntil)
-        return
     MouseGetPos(&mx, &my, &winUnder)
-    if handleGuiHwnd && Integer(winUnder) = Integer(handleGuiHwnd)
+    if handleGuiHwnd && winUnder = handleGuiHwnd
         return
     clicked := ResolveTopLevel(winUnder)
-    ; Pet/tool-window clicks must not fall back to resizing the foreground app.
-    if !clicked || !IsManagedWindow(clicked) || !PassesTriggerGate(clicked, mx, my)
+    if clicked && IsManagedWindow(clicked) && PassesTriggerGate(clicked, mx, my)
+        focusClick := {hwnd: clicked, x: mx, y: my}
+}
+
+FinishFocusClick() {
+    EnsurePhysicalCoordinates()
+    global focusClick, enabled, handleDragging, handleDragArmed, handleIgnoreExpandUntil
+    down := focusClick
+    focusClick := 0
+    if !down || !enabled || handleDragging || handleDragArmed || A_TickCount < handleIgnoreExpandUntil
+        return
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mx, &my, &winUnder)
+    ; A title-bar drag is a move gesture, not a request to expand the pair.
+    if ResolveTopLevel(winUnder) != down.hwnd || Abs(mx - down.x) > 6 || Abs(my - down.y) > 6
         return
     Sleep(80)
-    if enabled && WinAlive(clicked)
-        TryExpandFocused(clicked)
+    if enabled && WinAlive(down.hwnd) && !handleDragging && !handleDragArmed
+        TryExpandFocused(down.hwnd)
 }
 
 ; 트리거 방식(아무 데나/Ctrl+클릭/타이틀바)에 따라 이번 클릭이 포커싱을 발동시킬지 판정
 PassesTriggerGate(hwnd, mx, my) {
     global triggerMode
     if triggerMode = "ctrl_or_titlebar"
-        return GetKeyState("Ctrl", "P") || IsInTitleBar(hwnd, my)
+        return GetKeyState("Ctrl", "P") || IsInTitleBar(hwnd, mx, my)
     if triggerMode = "ctrl"
         return GetKeyState("Ctrl", "P")
     if triggerMode = "titlebar"
-        return IsInTitleBar(hwnd, my)
+        return IsInTitleBar(hwnd, mx, my)
     return true
 }
 
-IsInTitleBar(hwnd, my) {
+IsInTitleBar(hwnd, mx, my) {
+    EnsurePhysicalCoordinates()
     if !WinAlive(hwnd)
         return false
-    try
-        WinGetPos(, &y, , , "ahk_id " hwnd)
-    catch
+    ; Ask the window itself: tabs/buttons are HTCLIENT, draggable caption is HTCAPTION.
+    ; A bounded query avoids hanging the input hook on an unresponsive application.
+    hit := 0
+    try {
+        ok := DllCall("User32\SendMessageTimeoutW", "Ptr", hwnd, "UInt", 0x84,
+            "Ptr", 0, "Ptr", PackHitTestPoint(mx, my), "UInt", 0x0002,
+            "UInt", 100, "Ptr*", &hit, "Ptr")
+        return ok && hit = 2
+    } catch {
         return false
-    capH := DllCall("User32\GetSystemMetrics", "Int", 4)   ; SM_CYCAPTION
-        + DllCall("User32\GetSystemMetrics", "Int", 33)    ; SM_CYSIZEFRAME
-        + DllCall("User32\GetSystemMetrics", "Int", 92)    ; SM_CXPADDEDBORDER
-    return (my >= y) && (my <= y + capH)
+    }
+}
+
+PackHitTestPoint(x, y) {
+    packed := (Round(x) & 0xFFFF) | ((Round(y) & 0xFFFF) << 16)
+    return packed >= 0x80000000 ? packed - 0x100000000 : packed
 }
 
 TryExpandFocused(clickedRoot := 0) {
     global lastSwapTick, SWAP_COOLDOWN, userLargeRatio, handleDragging
+    global lastPairLeft, lastPairRight, DEFAULT_LARGE_RATIO
     if handleDragging
         return
     if (A_TickCount - lastSwapTick < SWAP_COOLDOWN)
@@ -305,15 +365,17 @@ TryExpandFocused(clickedRoot := 0) {
     totalW := work.w
     recovering := IsSplitRecoverState(fgRect, partnerRect, work)
 
-    ; 붙어 있는 분할이면 현재 너비에서 큰 쪽 비율을 학습
-    if !recovering
+    newPair := !((fg = lastPairLeft && partner = lastPairRight)
+        || (fg = lastPairRight && partner = lastPairLeft))
+    ; The first focus of a new pair always starts at 2:1. Later drags stay intact.
+    if !newPair && !recovering
         MaybeLearnRatioFromPair(fgRect, partnerRect, work)
 
     isBalanced := (Abs(fgRect.w - partnerRect.w) < totalW * 0.12)
-    if (!recovering && !isBalanced && fgRect.w >= partnerRect.w * 0.92)
+    if (!newPair && !recovering && !isBalanced && fgRect.w >= partnerRect.w * 0.92)
         return
 
-    largeW := Round(totalW * userLargeRatio)
+    largeW := Round(totalW * (newPair ? DEFAULT_LARGE_RATIO : userLargeRatio))
     smallW := totalW - largeW
 
     if (fgRect.x <= partnerRect.x) {
@@ -343,6 +405,8 @@ MaybeLearnRatioFromPair(a, b, work) {
 
 ApplySplit(leftHwnd, rightHwnd, x, y, leftW, rightW, h) {
     global lastPairLeft, lastPairRight
+    if !SameMonitor(leftHwnd, rightHwnd)
+        return false
     if !CanMovePair(leftHwnd, rightHwnd)
         return false
     ; 항상 작업영역 전체를 채움 (DWM/실측 너비 합이 화면보다 작아져 공터·왼쪽 밀림 방지)
@@ -357,6 +421,9 @@ ApplySplit(leftHwnd, rightHwnd, x, y, leftW, rightW, h) {
     if leftW > work.w - minW
         leftW := work.w - minW
     rightW := work.w - leftW
+    if !IsTargetInWorkArea(leftHwnd, work.x, work.y, leftW, work.h)
+        || !IsTargetInWorkArea(rightHwnd, work.x + leftW, work.y, rightW, work.h)
+        return false
     okL := ForceMove(leftHwnd, work.x, work.y, leftW, work.h)
     okR := ForceMove(rightHwnd, work.x + leftW, work.y, rightW, work.h)
     if !(okL && okR) {
@@ -366,6 +433,7 @@ ApplySplit(leftHwnd, rightHwnd, x, y, leftW, rightW, h) {
     lastPairLeft := leftHwnd
     lastPairRight := rightHwnd
     SetUserLargeRatio(Max(leftW, rightW) / work.w)
+    PersistActivePair()
     return true
 }
 
@@ -485,6 +553,7 @@ CycleTriggerMode(*) {
 ; ── 사이 핸들 ──
 
 InitHandleGui() {
+    EnsurePhysicalCoordinates()
     global handleGui, handleGuiHwnd, HANDLE_W
     handleGui := Gui("+AlwaysOnTop -Caption +ToolWindow -SysMenu +E0x08000000")
     handleGui.BackColor := "0x0D9488"
@@ -507,6 +576,7 @@ CleanupHandle(*) {
 }
 
 MoveHandleTo(hx, hy, hh) {
+    EnsurePhysicalCoordinates()
     global handleGuiHwnd, HANDLE_W
     if !handleGuiHwnd || hh < 40
         return
@@ -582,7 +652,7 @@ RefreshHandle(*) {
         handleGui.Hide()
         return
     }
-    if !IsManagedWindow(lastPairLeft) || !IsManagedWindow(lastPairRight) {
+    if !IsManagedWindow(lastPairLeft) || !IsManagedWindow(lastPairRight) || !SameMonitor(lastPairLeft, lastPairRight) {
         handleGui.Hide()
         return
     }
@@ -592,8 +662,8 @@ RefreshHandle(*) {
         return
     }
     EnsurePairOrder()
-    l := GetRectOuter(lastPairLeft)
-    r := GetRectOuter(lastPairRight)
+    l := GetRect(lastPairLeft)
+    r := GetRect(lastPairRight)
     if !l || !r {
         handleGui.Hide()
         return
@@ -610,6 +680,7 @@ RefreshHandle(*) {
 ; Timer/message callbacks default to client coordinates. The right window's origin
 ; moves with the seam, which feeds our own resize back into the next pointer delta.
 ReadDragPointer(&x, &y) {
+    EnsurePhysicalCoordinates()
     CoordMode("Mouse", "Screen")
     MouseGetPos(&x, &y)
 }
@@ -631,7 +702,7 @@ HandleLButtonDown(wParam, lParam, msg, hwnd) {
     ; 클릭 시점의 왼쪽 너비 기억 — 절대좌표로 바로 리사이즈하지 않음 (틱 이동 방지)
     EnsurePairOrder()
     work := GetWorkAreaForWindow(lastPairLeft)
-    l := GetRectOuter(lastPairLeft)
+    l := GetRect(lastPairLeft)
     handleDragStartMX := handleDownX
     handleDragStartLeftW := l ? l.w : Round(work.w / 2)
 
@@ -740,6 +811,7 @@ EnsurePairOrder() {
 }
 
 GetRectOuter(hwnd) {
+    EnsurePhysicalCoordinates()
     if !WinAlive(hwnd)
         return 0
     try {
@@ -756,15 +828,17 @@ SnapRightToActualLeft() {
         return
     EnsurePairOrder()
     work := GetWorkAreaForWindow(lastPairLeft)
-    l := GetRectOuter(lastPairLeft)
+    l := GetRect(lastPairLeft)
     if !l
         return
     leftW := MovePairFill(lastPairLeft, lastPairRight, work, l.w)
     SetUserLargeRatio(Max(leftW, work.w - leftW) / work.w, true)
+    PersistActivePair()
 }
 
 ; 두 창을 한 번에 배치 (왼쪽만 먼저 움직이며 생기는 떨림 방지)
 MovePairFill(leftHwnd, rightHwnd, work, leftW) {
+    EnsurePhysicalCoordinates()
     if !WinAlive(leftHwnd) || !WinAlive(rightHwnd)
         return leftW
     minW := Round(work.w * MIN_SIDE_RATIO)
@@ -773,14 +847,19 @@ MovePairFill(leftHwnd, rightHwnd, work, leftW) {
     if leftW > work.w - minW
         leftW := work.w - minW
     rightW := work.w - leftW
+    if !IsTargetInWorkArea(leftHwnd, work.x, work.y, leftW, work.h)
+        || !IsTargetInWorkArea(rightHwnd, work.x + leftW, work.y, rightW, work.h)
+        return leftW
     flags := 0x0010 | 0x0004 | 0x0400  ; NOACTIVATE | NOZORDER | NOSENDCHANGING
+    leftTarget := VisualTargetToOuter(leftHwnd, work.x, work.y, leftW, work.h)
+    rightTarget := VisualTargetToOuter(rightHwnd, work.x + leftW, work.y, rightW, work.h)
     hdwp := DllCall("User32\BeginDeferWindowPos", "Int", 2, "Ptr")
     if hdwp {
         hdwp := DllCall("User32\DeferWindowPos", "Ptr", hdwp, "Ptr", leftHwnd, "Ptr", 0,
-            "Int", work.x, "Int", work.y, "Int", leftW, "Int", work.h, "UInt", flags, "Ptr")
+            "Int", leftTarget.x, "Int", leftTarget.y, "Int", leftTarget.w, "Int", leftTarget.h, "UInt", flags, "Ptr")
         if hdwp
             hdwp := DllCall("User32\DeferWindowPos", "Ptr", hdwp, "Ptr", rightHwnd, "Ptr", 0,
-                "Int", work.x + leftW, "Int", work.y, "Int", rightW, "Int", work.h, "UInt", flags, "Ptr")
+                "Int", rightTarget.x, "Int", rightTarget.y, "Int", rightTarget.w, "Int", rightTarget.h, "UInt", flags, "Ptr")
         if hdwp && DllCall("User32\EndDeferWindowPos", "Ptr", hdwp)
             return leftW
     }
@@ -819,7 +898,7 @@ DoHandleDrag(*) {
     MovePairFill(dragLeftHwnd, dragRightHwnd, work, leftW)
 
     ; 앱 최소너비에 막혔으면 그 지점을 한계로 기억해 계속 밀어붙이지 않는다
-    l := GetRectOuter(dragLeftHwnd)
+    l := GetRect(dragLeftHwnd)
     if l && Abs(l.w - leftW) > 4 {
         if leftW < l.w
             dragMinLeftW := l.w
@@ -1043,17 +1122,40 @@ IsSplitRecoverState(a, b, work) {
 }
 
 ForceMove(hwnd, x, y, w, h) {
+    EnsurePhysicalCoordinates()
+    if !IsTargetInWorkArea(hwnd, x, y, w, h)
+        return false
     if !WinAlive(hwnd)
         return false
     try {
         flags := 0x0004 | 0x0010  ; SWP_NOZORDER | SWP_NOACTIVATE
+        target := VisualTargetToOuter(hwnd, x, y, w, h)
         if DllCall("User32\SetWindowPos", "Ptr", hwnd, "Ptr", 0,
-            "Int", x, "Int", y, "Int", w, "Int", h, "UInt", flags)
+            "Int", target.x, "Int", target.y, "Int", target.w, "Int", target.h, "UInt", flags)
             return true
-        WinMove(x, y, w, h, "ahk_id " hwnd)
+        WinMove(target.x, target.y, target.w, target.h, "ahk_id " hwnd)
         return true
     } catch {
         return false
+    }
+}
+
+VisualTargetToOuter(hwnd, x, y, w, h) {
+    visual := GetRect(hwnd)
+    outer := GetRectOuter(hwnd)
+    if !visual || !outer
+        return { x: x, y: y, w: w, h: h }
+
+    leftInset := visual.x - outer.x
+    topInset := visual.y - outer.y
+    rightInset := outer.r - visual.r
+    bottomInset := outer.b - visual.b
+
+    return {
+        x: x - leftInset,
+        y: y - topInset,
+        w: w + leftInset + rightInset,
+        h: h + topInset + bottomInset
     }
 }
 
@@ -1125,6 +1227,7 @@ RestartAsAdmin(*) {
 }
 
 GetRect(hwnd) {
+    EnsurePhysicalCoordinates()
     if !WinAlive(hwnd)
         return 0
     try {
@@ -1135,7 +1238,8 @@ GetRect(hwnd) {
             y := NumGet(rect, 4, "Int")
             r := NumGet(rect, 8, "Int")
             b := NumGet(rect, 12, "Int")
-            return { x: x, y: y, w: r - x, h: b - y, r: r, b: b }
+            if r > x && b > y
+                return { x: x, y: y, w: r - x, h: b - y, r: r, b: b }
         }
         WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
         return { x: x, y: y, w: w, h: h, r: x + w, b: y + h }
@@ -1145,6 +1249,7 @@ GetRect(hwnd) {
 }
 
 GetWorkAreaForWindow(hwnd) {
+    EnsurePhysicalCoordinates()
     if !WinAlive(hwnd) {
         MonitorGetWorkArea(, &wl, &wt, &wr, &wb)
         return { x: wl, y: wt, w: wr - wl, h: wb - wt, r: wr, b: wb }
@@ -1157,6 +1262,7 @@ GetWorkAreaForWindow(hwnd) {
 }
 
 GetMonitorWorkArea(hwnd, &wl, &wt, &wr, &wb) {
+    EnsurePhysicalCoordinates()
     mi := Buffer(40, 0)
     NumPut("UInt", 40, mi)
     hMon := DllCall("User32\MonitorFromWindow", "Ptr", hwnd, "UInt", 2, "Ptr")
@@ -1172,6 +1278,7 @@ GetMonitorWorkArea(hwnd, &wl, &wt, &wr, &wb) {
 }
 
 MonitorHandle(hwnd) {
+    EnsurePhysicalCoordinates()
     return DllCall("User32\MonitorFromWindow", "Ptr", hwnd, "UInt", 2, "Ptr")
 }
 
@@ -1200,3 +1307,6 @@ HorizontalOverlap(a, b) {
 ShowUsage(*) {
     MsgBox("1. 창 두 개를 나란히 놓으세요.`n2. 작은 창의 제목 표시줄을 클릭하거나 Ctrl을 누른 채 클릭하세요.`n3. 청록색 막대를 드래그하면 비율이 바뀝니다.`n4. 막대를 더블클릭하면 좌우 창이 바뀝니다.`n`nCtrl+Alt+F12: 켜기/끄기`n트레이 아이콘: 클릭 방식 변경, 종료`n`n관리자 권한 앱과 함께 사용할 때는 트레이에서 관리자 권한 재시작을 선택하세요.", "Focusing 사용 방법")
 }
+#Include %A_ScriptDir%\PairShortcuts.ahk
+
+

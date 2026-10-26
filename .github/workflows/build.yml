@@ -1,0 +1,37 @@
+name: Build and test
+on:
+  push:
+    branches: [main, release/**]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, regression tests, and installer lifecycle
+        shell: pwsh
+        run: ./ci-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            build/Focusing-*-windows-x64-setup.exe
+            build/Focusing-*-windows-x64-portable.zip
+            build/*.txt
+          if-no-files-found: error
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Universal build, signature and layout checks
+        run: ./macos/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: |
+            build/Focusing-*-macos-universal.dmg
+            build/Focusing-*-macos-universal.zip
+          if-no-files-found: error
